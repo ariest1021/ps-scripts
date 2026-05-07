@@ -17,6 +17,7 @@ Features:
 ---
 
 ## Utilities (Planned / Expanding)
+Just some general utility
 
 ### Backup Automation
 Tool for fast file archiving and transfer
