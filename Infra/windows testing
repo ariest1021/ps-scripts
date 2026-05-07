@@ -1,0 +1,74 @@
+param (
+    [string]$vmName = "WinTestVM",
+    [int]$memory = 4096,
+    [int]$cpus = 2,
+    [string]$isoPath = "C:\ISO\Windows10.iso",
+    [string]$vmPath = "C:\VMs" # Removed $vmName from here to avoid nested folders
+)
+
+# Define the disk path (This was missing)
+$diskPath = Join-Path $vmPath "$vmName\$vmName.vdi"
+
+# Ensure folders exist
+New-Item -ItemType Directory -Force -Path (Split-Path $diskPath) | Out-Null
+
+# =========================
+# Delete VM if it already exists (and wipe leftover files)
+# =========================
+if (VBoxManage list vms | Select-String -Pattern "`"$vmName`"") {
+    VBoxManage unregistervm $vmName --delete
+    Write-Host "Old VM unregistered and files deleted."
+}
+
+# Explicitly wipe the folder to catch leftover unattended ISOs/logs
+$specificVMPath = Join-Path $vmPath $vmName
+if (Test-Path $specificVMPath) {
+    Remove-Item -Path $specificVMPath -Recurse -Force
+    Write-Host "Cleanup: Residual folder $specificVMPath removed."
+}
+
+# Re-create fresh directory
+New-Item -ItemType Directory -Force -Path $specificVMPath | Out-Null
+
+
+# Create VM
+VBoxManage createvm --name $vmName --ostype Windows10_64 --register --basefolder $vmPath
+
+# Use the params here instead of hardcoded values
+VBoxManage modifyvm $vmName `
+  --memory $memory `
+  --cpus $cpus `
+  --nic1 nat `
+  --graphicscontroller vboxsvga `
+  --vram 128
+
+# Create disk
+VBoxManage createhd --filename $diskPath --size 60000
+
+# Storage controller
+VBoxManage storagectl $vmName --name "SATA" --add sata --controller IntelAhci --portcount 2
+
+# Attach disk
+VBoxManage storageattach $vmName `
+  --storagectl "SATA" `
+  --port 0 --device 0 `
+  --type hdd `
+  --medium $diskPath
+
+# Attach ISO
+VBoxManage storageattach $vmName `
+  --storagectl "SATA" `
+  --port 1 --device 0 `
+  --type dvddrive `
+  --medium $isoPath
+
+# Unattended install
+VBoxManage unattended install $vmName `
+  --user=admin `
+  --password="Password123!" `
+  --full-user-name="Test User" `
+  --install-additions `
+  --time-zone="UTC"
+
+# Start VM
+VBoxManage startvm $vmName --type gui
